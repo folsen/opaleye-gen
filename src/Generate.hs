@@ -37,6 +37,7 @@ fullTableText td = mconcat
   , genConcreteType td, "\n\n"
   , genPgTypes Read td, "\n\n"
   , genPgTypes Write td, "\n\n"
+  , genPgTypes Nullable td, "\n\n"
   , "$(makeAdaptorAndInstance \"p", typeName td, "\" ''", typeName td,"')\n\n"
   , tableDefinition td, "\n"]
 
@@ -59,9 +60,13 @@ genConcreteType t = mconcat ["type ", typeName t, " = ", typeName t, "' "] <> co
                      then "(" <> typeNameToHType c <> ")"
                      else typeNameToHType c
 
-data TableDefType = Read | Write deriving (Show, Eq)
+data TableDefType = Read | Write | Nullable deriving (Show, Eq)
 
 genPgTypes :: TableDefType -> TableDefinition -> Text
+genPgTypes Nullable t = mconcat ["type ", typeName t, "NullableColumns = ", typeName t, "' "] <> pgTypes
+  where
+    pgTypes = unwords $ map alwaysNullable (columns t)
+    alwaysNullable c = "(Column " <> pgTypeForColumn c {is_nullable = "YES"} <> ")"
 genPgTypes dt t = mconcat ["type ", typeName t, pack (show dt), "Columns = ", typeName t, "' "] <> pgTypes
   where
     pgTypes = unwords $ map specializeForId (columns t)
