@@ -1,0 +1,32 @@
+name:                opaleye-gen
+version:             0.1.0.0
+synopsis:            A lightweight program to generate Opaleye boilerplate from a database
+description:         Please see README.md
+homepage:            https://github.com/folsen/opaleye-gen#readme
+license:             BSD3
+license-file:        LICENSE
+author:              Fredrik Olsen
+maintainer:          fredrik@dekompile.com
+copyright:           BSD3
+category:            Web
+build-type:          Simple
+cabal-version:       >=1.10
+
+executable opaleye-gen
+  hs-source-dirs:      src
+  main-is:             Main.hs
+  other-modules:       Database
+                     , Generate
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+  build-depends:       base >= 4.7 && < 5
+                     , bytestring
+                     , cases
+                     , containers
+                     , countable-inflections
+                     , opaleye
+                     , optparse-applicative
+                     , postgresql-simple
+                     , product-profunctors
+                     , text
+                     , time
