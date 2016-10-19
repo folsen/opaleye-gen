@@ -4,7 +4,7 @@ module Generate where
 import           Prelude        hiding (unwords)
 
 import qualified Cases          as C
-import           Data.Monoid    ((<>))
+import           Data.Monoid    ((<>), mconcat)
 import           Data.Text      hiding (map)
 import           Database
 import           Text.Countable
@@ -117,6 +117,7 @@ typeNameToHType col =
     "jsonb"       -> mval <> "JSON.Value"
     "varchar"     -> mval <> "Text"
     "_varchar"    -> "[Text]"
+    "_int4"       -> "[Int32]"
     "oid"         -> mval <> "Int64"
     "inet"        -> mval <> "Text"
     other         -> error $ "Unimplemented PostgresQL type conversion for " <> show other
@@ -147,6 +148,7 @@ pgTypeForColumn col =
     "jsonb"       -> nullify "PGJsonb"
     "varchar"     -> nullify "PGText"
     "_varchar"    -> nullify "(PGArray Text)"
+    "_int4"       -> nullify "(PGArray Int4)"
     "oid"         -> nullify "PGInt8"
     "inet"        -> nullify "PGText"
     other         -> error $ "Unimplemented PostgresQL type conversion for " <> show other
