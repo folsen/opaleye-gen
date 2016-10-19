@@ -4,7 +4,7 @@ module Generate where
 import           Prelude        hiding (unwords)
 
 import qualified Cases          as C
-import           Data.Monoid    ((<>))
+import           Data.Monoid    ((<>), mconcat)
 import           Data.Text      hiding (map)
 import           Database
 import           Text.Countable

@@ -11,6 +11,7 @@ import           Control.Monad
 import qualified Data.ByteString.Char8      as Char8
 import qualified Data.List                  as L
 import qualified Data.Map                   as M
+import           Data.Monoid                ((<>))
 import           Data.Ord                   (comparing)
 import           Data.Text                  hiding (map)
 import qualified Database.PostgreSQL.Simple as PGS
