@@ -38,6 +38,8 @@ fullTableText td = mconcat
   , genPgTypes Read td, "\n\n"
   , genPgTypes Write td, "\n\n"
   , genPgTypes Nullable td, "\n\n"
+  , genMaybeType td, "\n\n"
+  , genSequence td, "\n\n"
   , "$(makeAdaptorAndInstance \"p", typeName td, "\" ''", typeName td,"')\n\n"
   , tableDefinition td, "\n"]
 
@@ -74,6 +76,24 @@ genPgTypes dt t = mconcat ["type ", typeName t, pack (show dt), "Columns = ", ty
                         then "(Maybe (Column " <> pgTypeForColumn c <> "))"
                         else "(Column " <> pgTypeForColumn c <> ")"
 
+genMaybeType :: TableDefinition -> Text
+genMaybeType t = mconcat ["type ", typeName t, "Maybe = ", typeName t, "' "] <> maybeTypes
+  where
+    maybeTypes = unwords $ map parenthesize (columns t)
+    parenthesize c = "(" <> typeNameToHTypeMaybe ApplyToMaybe c <> ")"
+
+genSequence :: TableDefinition -> Text
+genSequence t = sequenceSig <> "\n" <> sequenceDef
+  where
+    sequenceSig = mconcat ["sequence", typeName t, " :: ", typeName t, "Maybe -> Maybe ", typeName t]
+    sequenceDef = "sequence" <> typeName t <> " (" <> typeName t <> " " <> pats <> ") = pure " <> typeName t <> args
+    pats = unwords (fst <$> namesWithColumns)
+    namesWithColumns = Prelude.zip (("c" <>) . pack . show <$> [1::Int ..]) (columns t)
+    args = mconcat $ (" <*> " <>) . makeArg <$> namesWithColumns
+    makeArg (n, c) = if is_nullable c == "YES"
+                       then "pure " <> n
+                       else n
+
 tableDefinition :: TableDefinition -> Text
 tableDefinition t = mconcat [ typeName'
                             , "Table :: Table "
@@ -90,11 +110,22 @@ tableDefinition t = mconcat [ typeName'
                         then fieldName c <> " = optional \"" <> column_name c <> "\""
                         else fieldName c <> " = required \"" <> column_name c <> "\""
 
+typeNameToHType :: InformationSchemaColumn -> Text
+typeNameToHType col = typeNameToHTypeMaybe apply col
+  where
+    apply = if is_nullable col == "YES"
+              then ApplyToMaybe
+              else DoNotApplyToMaybe
+
+data ApplyToMaybe = ApplyToMaybe | DoNotApplyToMaybe
+
 -- Some dirty mappings, these don't account for Array correctly, there should
 -- be another check for that on the another column, the udt_name will be _type for
 -- an array of `type`
-typeNameToHType :: InformationSchemaColumn -> Text
-typeNameToHType col =
+typeNameToHTypeMaybe :: ApplyToMaybe
+                     -> InformationSchemaColumn
+                     -> Text
+typeNameToHTypeMaybe applyToMaybe col =
   case udt_name col of
     "bool"        -> mval <> "Bool"
     "int2"        -> mval <> "Int16"
@@ -122,7 +153,9 @@ typeNameToHType col =
     "inet"        -> mval <> "Text"
     other         -> error $ "Unimplemented PostgresQL type conversion for " <> show other
   where
-    mval = if is_nullable col == "YES" then "Maybe " else ""
+    mval = case applyToMaybe of
+             ApplyToMaybe      -> "Maybe "
+             DoNotApplyToMaybe -> ""
 
 pgTypeForColumn :: InformationSchemaColumn -> Text
 pgTypeForColumn col =
