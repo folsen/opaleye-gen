@@ -18,16 +18,48 @@ fileHeaderText :: Text
 fileHeaderText = intercalate "\n"
   [ "{-# LANGUAGE TemplateHaskell #-}"
   , "{-# LANGUAGE MultiParamTypeClasses #-}"
+  , "{-# LANGUAGE FlexibleContexts #-}"
   , "{-# LANGUAGE FlexibleInstances #-}"
-  , "\nmodule Database where\n"
+  , ""
+  , "module Database where"
+  , ""
   , "import qualified Data.Aeson                 as JSON"
+  , "import           Data.Profunctor"
+  , "import           Data.Profunctor.Product"
+  , "import           Data.Profunctor.Product.Default"
   , "import           Data.Profunctor.Product.TH (makeAdaptorAndInstance)"
   , "import           Data.Scientific"
   , "import           Data.Text"
   , "import           Data.Time"
   , "import           Data.UUID"
   , "import           GHC.Int"
-  , "import           Opaleye"
+  , "import           Opaleye hiding (fromNullable)"
+  , ""
+  , "-- | A newtype around @a -> Maybe b@ to facilitate conversions from the"
+  , "-- Nullable types."
+  , "newtype ToMaybe a b = ToMaybe { unToMaybe :: a -> Maybe b }"
+  , ""
+  , "instance Profunctor ToMaybe where"
+  , "  dimap f g (ToMaybe h) = ToMaybe (fmap g . h . f)"
+  , ""
+  , "instance ProductProfunctor ToMaybe where"
+  , "  empty = ToMaybe pure"
+  , "  (ToMaybe f) ***! (ToMaybe g) = ToMaybe (\\(x, y) -> (,) <$> f x <*> g y)"
+  , ""
+  , "-- | This instance makes sure that values which are required in the output are"
+  , "-- required in the input."
+  , "instance Default ToMaybe (Maybe a) a where"
+  , "  def = ToMaybe id"
+  , ""
+  , "-- | This instance allows values which are optional in the output to be"
+  , "-- optional in the input."
+  , "instance Default ToMaybe (Maybe a) (Maybe a) where"
+  , "  def = ToMaybe pure"
+  , ""
+  , "-- | Convert from any Nullable type by \"sequencing\" over all the fields."
+  , "fromNullable :: Default ToMaybe a b => a -> Maybe b"
+  , "fromNullable = unToMaybe def"
+  , ""
   ]
 
 fullTableText :: TableDefinition -> Text
@@ -38,7 +70,7 @@ fullTableText td = mconcat
   , genPgTypes Read td, "\n\n"
   , genPgTypes Write td, "\n\n"
   , genPgTypes Nullable td, "\n\n"
-  , genMaybeType td, "\n\n"
+  , genNullableType td, "\n\n"
   , genSequence td, "\n\n"
   , "$(makeAdaptorAndInstance \"p", typeName td, "\" ''", typeName td,"')\n\n"
   , tableDefinition td, "\n"]
@@ -76,23 +108,17 @@ genPgTypes dt t = mconcat ["type ", typeName t, pack (show dt), "Columns = ", ty
                         then "(Maybe (Column " <> pgTypeForColumn c <> "))"
                         else "(Column " <> pgTypeForColumn c <> ")"
 
-genMaybeType :: TableDefinition -> Text
-genMaybeType t = mconcat ["type ", typeName t, "Maybe = ", typeName t, "' "] <> maybeTypes
+genNullableType :: TableDefinition -> Text
+genNullableType t = mconcat ["type ", typeName t, "Nullable = ", typeName t, "' "] <> maybeTypes
   where
     maybeTypes = unwords $ map parenthesize (columns t)
     parenthesize c = "(" <> typeNameToHTypeMaybe ApplyToMaybe c <> ")"
 
 genSequence :: TableDefinition -> Text
-genSequence t = sequenceSig <> "\n" <> sequenceDef
+genSequence t = fromNullableSig <> "\n" <> fromNullableDef
   where
-    sequenceSig = mconcat ["sequence", typeName t, " :: ", typeName t, "Maybe -> Maybe ", typeName t]
-    sequenceDef = "sequence" <> typeName t <> " (" <> typeName t <> " " <> pats <> ") = pure " <> typeName t <> args
-    pats = unwords (fst <$> namesWithColumns)
-    namesWithColumns = Prelude.zip (("c" <>) . pack . show <$> [1::Int ..]) (columns t)
-    args = mconcat $ (" <*> " <>) . makeArg <$> namesWithColumns
-    makeArg (n, c) = if is_nullable c == "YES"
-                       then "pure " <> n
-                       else n
+    fromNullableSig = mconcat ["fromNullable", typeName t, " :: ", typeName t, "Nullable -> Maybe ", typeName t]
+    fromNullableDef = "fromNullable" <> typeName t <> " = fromNullable"
 
 tableDefinition :: TableDefinition -> Text
 tableDefinition t = mconcat [ typeName'
