@@ -18,16 +18,48 @@ fileHeaderText :: Text
 fileHeaderText = intercalate "\n"
   [ "{-# LANGUAGE TemplateHaskell #-}"
   , "{-# LANGUAGE MultiParamTypeClasses #-}"
+  , "{-# LANGUAGE FlexibleContexts #-}"
   , "{-# LANGUAGE FlexibleInstances #-}"
-  , "\nmodule Database where\n"
+  , ""
+  , "module Database where"
+  , ""
   , "import qualified Data.Aeson                 as JSON"
+  , "import           Data.Profunctor"
+  , "import           Data.Profunctor.Product"
+  , "import           Data.Profunctor.Product.Default"
   , "import           Data.Profunctor.Product.TH (makeAdaptorAndInstance)"
   , "import           Data.Scientific"
   , "import           Data.Text"
   , "import           Data.Time"
   , "import           Data.UUID"
   , "import           GHC.Int"
-  , "import           Opaleye"
+  , "import           Opaleye hiding (fromNullable)"
+  , ""
+  , "-- | A newtype around @a -> Maybe b@ to facilitate conversions from the"
+  , "-- Nullable types."
+  , "newtype ToMaybe a b = ToMaybe { unToMaybe :: a -> Maybe b }"
+  , ""
+  , "instance Profunctor ToMaybe where"
+  , "  dimap f g (ToMaybe h) = ToMaybe (fmap g . h . f)"
+  , ""
+  , "instance ProductProfunctor ToMaybe where"
+  , "  empty = ToMaybe pure"
+  , "  (ToMaybe f) ***! (ToMaybe g) = ToMaybe (\\(x, y) -> (,) <$> f x <*> g y)"
+  , ""
+  , "-- | This instance makes sure that values which are required in the output are"
+  , "-- required in the input."
+  , "instance Default ToMaybe (Maybe a) a where"
+  , "  def = ToMaybe id"
+  , ""
+  , "-- | This instance allows values which are optional in the output to be"
+  , "-- optional in the input."
+  , "instance Default ToMaybe (Maybe a) (Maybe a) where"
+  , "  def = ToMaybe pure"
+  , ""
+  , "-- | Convert from any Nullable type by \"sequencing\" over all the fields."
+  , "fromNullable :: Default ToMaybe a b => a -> Maybe b"
+  , "fromNullable = unToMaybe def"
+  , ""
   ]
 
 fullTableText :: TableDefinition -> Text
@@ -38,6 +70,8 @@ fullTableText td = mconcat
   , genPgTypes Read td, "\n\n"
   , genPgTypes Write td, "\n\n"
   , genPgTypes Nullable td, "\n\n"
+  , genNullableType td, "\n\n"
+  , genSequence td, "\n\n"
   , "$(makeAdaptorAndInstance \"p", typeName td, "\" ''", typeName td,"')\n\n"
   , tableDefinition td, "\n"]
 
@@ -74,6 +108,18 @@ genPgTypes dt t = mconcat ["type ", typeName t, pack (show dt), "Columns = ", ty
                         then "(Maybe (Column " <> pgTypeForColumn c <> "))"
                         else "(Column " <> pgTypeForColumn c <> ")"
 
+genNullableType :: TableDefinition -> Text
+genNullableType t = mconcat ["type ", typeName t, "Nullable = ", typeName t, "' "] <> maybeTypes
+  where
+    maybeTypes = unwords $ map parenthesize (columns t)
+    parenthesize c = "(" <> typeNameToHTypeMaybe ApplyToMaybe c <> ")"
+
+genSequence :: TableDefinition -> Text
+genSequence t = fromNullableSig <> "\n" <> fromNullableDef
+  where
+    fromNullableSig = mconcat ["fromNullable", typeName t, " :: ", typeName t, "Nullable -> Maybe ", typeName t]
+    fromNullableDef = "fromNullable" <> typeName t <> " = fromNullable"
+
 tableDefinition :: TableDefinition -> Text
 tableDefinition t = mconcat [ typeName'
                             , "Table :: Table "
@@ -90,11 +136,22 @@ tableDefinition t = mconcat [ typeName'
                         then fieldName c <> " = optional \"" <> column_name c <> "\""
                         else fieldName c <> " = required \"" <> column_name c <> "\""
 
+typeNameToHType :: InformationSchemaColumn -> Text
+typeNameToHType col = typeNameToHTypeMaybe apply col
+  where
+    apply = if is_nullable col == "YES"
+              then ApplyToMaybe
+              else DoNotApplyToMaybe
+
+data ApplyToMaybe = ApplyToMaybe | DoNotApplyToMaybe
+
 -- Some dirty mappings, these don't account for Array correctly, there should
 -- be another check for that on the another column, the udt_name will be _type for
 -- an array of `type`
-typeNameToHType :: InformationSchemaColumn -> Text
-typeNameToHType col =
+typeNameToHTypeMaybe :: ApplyToMaybe
+                     -> InformationSchemaColumn
+                     -> Text
+typeNameToHTypeMaybe applyToMaybe col =
   case udt_name col of
     "bool"        -> mval <> "Bool"
     "int2"        -> mval <> "Int16"
@@ -122,7 +179,9 @@ typeNameToHType col =
     "inet"        -> mval <> "Text"
     other         -> error $ "Unimplemented PostgresQL type conversion for " <> show other
   where
-    mval = if is_nullable col == "YES" then "Maybe " else ""
+    mval = case applyToMaybe of
+             ApplyToMaybe      -> "Maybe "
+             DoNotApplyToMaybe -> ""
 
 pgTypeForColumn :: InformationSchemaColumn -> Text
 pgTypeForColumn col =
