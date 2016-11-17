@@ -24,9 +24,11 @@ executable opaleye-gen
                      , cases
                      , containers
                      , countable-inflections
+                     , interpolatedstring-perl6
                      , opaleye
                      , optparse-applicative
                      , postgresql-simple
                      , product-profunctors
+                     , template-haskell
                      , text
                      , time
