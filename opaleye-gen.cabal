@@ -23,7 +23,7 @@ executable opaleye-gen
                      , bytestring
                      , cases
                      , containers
-                     , countable-inflections
+                     , countable-inflections >= 0.2.0
                      , interpolatedstring-perl6
                      , opaleye
                      , optparse-applicative
