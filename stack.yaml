@@ -40,12 +40,11 @@ packages:
 - location:
     git: https://github.com/tomjaguarpaw/product-profunctors.git
     commit: 30044c2f3d22d182bcadd6b87464507f47fa4b2f
-- location:
-    git: https://github.com/folsen/countable-inflections.git
-    commit: cb2f8285d3756e4a31d6c8130f07d265f706e23b
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
-extra-deps: []
+extra-deps:
+  - countable-inflections-0.2.0
+
 
 # Override default flag values for local packages and extra-deps
 flags: {}
