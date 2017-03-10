@@ -15,7 +15,7 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-6.22
+resolver: lts-8.3
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -37,13 +37,11 @@ resolver: lts-6.22
 # will not be run. This is useful for tweaking upstream packages.
 packages:
 - '.'
-- location:
-    git: https://github.com/tomjaguarpaw/product-profunctors.git
-    commit: 30044c2f3d22d182bcadd6b87464507f47fa4b2f
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
 extra-deps:
   - countable-inflections-0.2.0
+  - product-profunctors-0.8.0.3
 
 
 # Override default flag values for local packages and extra-deps
