@@ -203,8 +203,8 @@ typeNameToHTypeMaybe applyToMaybe col =
     "json"        -> mval <> "JSON.Value"
     "jsonb"       -> mval <> "JSON.Value"
     "varchar"     -> mval <> "Text"
-    "_varchar"    -> "[Text]"
-    "_int4"       -> "[Int32]"
+    "_varchar"    -> mval <> "[Text]"
+    "_int4"       -> mval <> "[Int32]"
     "oid"         -> mval <> "Int64"
     "inet"        -> mval <> "Text"
     other         -> mval <> "FIXME_" <> other
