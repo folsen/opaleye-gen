@@ -241,8 +241,8 @@ pgTypeForColumn col =
     "jsonb"       -> nullify "PGJsonb"
     "varchar"     -> nullify "PGText"
     "bpchar"      -> nullify "PGText"
-    "_varchar"    -> nullify "(PGArray Text)"
-    "_int4"       -> nullify "(PGArray Int4)"
+    "_varchar"    -> nullify "(PGArray PGText)"
+    "_int4"       -> nullify "(PGArray PGInt4)"
     "oid"         -> nullify "PGInt8"
     "inet"        -> nullify "PGText"
     other         -> nullify $ "FIXME_" <> other
