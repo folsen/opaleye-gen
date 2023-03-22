@@ -23,7 +23,7 @@ executable opaleye-gen
                      , bytestring
                      , cases
                      , containers
-                     , countable-inflections >= 0.2.0
+                     , countable-inflections
                      , interpolatedstring-perl6
                      , opaleye
                      , optparse-applicative
@@ -32,3 +32,4 @@ executable opaleye-gen
                      , template-haskell
                      , text
                      , time
+                     , filepath

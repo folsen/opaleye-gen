@@ -9,7 +9,7 @@ types, thus needing to change the generate boilerplate.
 To use, just run it with
 
 ```
-opaleye-gen -d postgresql://localhost/your_database -o Database.hs
+opaleye-gen -d postgresql://localhost/your_database -o Database.hs -s public
 ```
 
 That will read the specification of `your_database` from the database and

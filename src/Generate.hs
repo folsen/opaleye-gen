@@ -3,28 +3,29 @@
 
 module Generate where
 
-import           Prelude        hiding (unwords)
+import           Prelude         hiding (unwords)
 
-import qualified Cases          as C
-import           Data.Monoid    ((<>))
-import           Data.Text      hiding (map)
+import qualified Cases           as C
+import           Data.Monoid     ((<>))
+import           Data.Text       hiding (map)
 import           Database
 import           Text.Countable
-import           Util           (q, qc)
+import           Util            (q, qc)
+import           System.FilePath (dropExtension)
 
 data TableDefinition = TableDefinition
   { tableName :: Text
   , columns   :: [InformationSchemaColumn]
   }
 
-fileHeaderText :: Text
-fileHeaderText = [q|
-  {-# LANGUAGE TemplateHaskell #-}
-  {-# LANGUAGE MultiParamTypeClasses #-}
-  {-# LANGUAGE FlexibleContexts #-}
-  {-# LANGUAGE FlexibleInstances #-}
+fileHeaderText :: String -> Text
+fileHeaderText filePath = [qc|
+  \{-# LANGUAGE TemplateHaskell #-}
+  \{-# LANGUAGE MultiParamTypeClasses #-}
+  \{-# LANGUAGE FlexibleContexts #-}
+  \{-# LANGUAGE FlexibleInstances #-}
 
-  module Database where
+  module {dropExtension filePath} where
 
   import qualified Data.Aeson                 as JSON
   import           Data.Profunctor
@@ -36,11 +37,11 @@ fileHeaderText = [q|
   import           Data.Time
   import           Data.UUID
   import           GHC.Int
-  import           Opaleye hiding (fromNullable)
+  import           Opaleye hiding (fromNullable, Query)
 
   -- | A newtype around @a -> Maybe b@ to facilitate conversions from the
   -- Nullable types.
-  newtype ToMaybe a b = ToMaybe { unToMaybe :: a -> Maybe b }
+  newtype ToMaybe a b = ToMaybe \{ unToMaybe :: a -> Maybe b }
 
   instance Profunctor ToMaybe where
     dimap f g (ToMaybe h) = ToMaybe (fmap g . h . f)
@@ -64,27 +65,35 @@ fileHeaderText = [q|
   fromNullable = unToMaybe def
   |]
 
-fullTableText :: TableDefinition -> Text
-fullTableText td = [qc|
-  ---- Types for table: {tableName td} ----
+fullTableText :: String -> TableDefinition -> Text
+fullTableText schema td = [qc|
+  ---- Types for table: {schema}.{tableName td} ----
 
+  -- {schema}.{tableName td} Abstract Type --
   {genAbstractType td}
 
+  -- {schema}.{tableName td} Concrete Type --
   {genConcreteType td}
 
+  -- {schema}.{tableName td} Pg Types Read  --
   {genPgTypes Read td}
 
+  -- {schema}.{tableName td} Pg Types Write --
   {genPgTypes Write td}
 
+  -- {schema}.{tableName td} Pg Types Nullable --
   {genPgTypes Nullable td}
 
+  -- {schema}.{tableName td} Nullable Type --
   {genNullableType td}
 
+  -- {schema}.{tableName td} Sequence --
   {genSequence td}
 
   $(makeAdaptorAndInstance "p{typeName td}" ''{typeName td}')
 
-  {tableDefinition td}
+  -- {schema}.{tableName td} Table Definition --
+  {tableDefinition schema td}
   |]
 
 genAbstractType :: TableDefinition -> Text
@@ -142,20 +151,20 @@ genSequence t = [qc|
     fromNullableDef :: Text
     fromNullableDef = [qc|fromNullable{typeName t} = fromNullable|]
 
-tableDefinition :: TableDefinition -> Text
-tableDefinition t = [qc|
+tableDefinition :: String -> TableDefinition -> Text
+tableDefinition schema t = [qc|
   {typeName'}Table :: Table {typeName t}WriteColumns {typeName t}ReadColumns
-  {typeName'}Table = Table "{tableName t}" (p{typeName t}
+  {typeName'}Table = tableWithSchema "{schema}" "{tableName t}" (p{typeName t}
     {typeName t}
       \{ {fieldDefinitions}
       }
     )|]
   where
-    typeName' = singularize . C.camelize $ tableName t
+    typeName' = singularize . camelize' $ tableName t
     fieldDefinitions = intercalate "\n    , " $ map fieldDefinition (columns t)
     fieldDefinition c = if column_name c == "id" || is_nullable c == "YES"
-                        then [qc|{fieldName c} = optional "{column_name c}"|]
-                        else [qc|{fieldName c} = required "{column_name c}"|]
+                        then [qc|{fieldName c} = optionalTableField "{column_name c}"|]
+                        else [qc|{fieldName c} = requiredTableField "{column_name c}"|]
 
 typeNameToHType :: InformationSchemaColumn -> Text
 typeNameToHType col = typeNameToHTypeMaybe apply col
@@ -194,11 +203,12 @@ typeNameToHTypeMaybe applyToMaybe col =
     "json"        -> mval <> "JSON.Value"
     "jsonb"       -> mval <> "JSON.Value"
     "varchar"     -> mval <> "Text"
-    "_varchar"    -> "[Text]"
-    "_int4"       -> "[Int32]"
+    "bpchar"      -> mval <> "Text"
+    "_varchar"    -> mval <> "[Text]"
+    "_int4"       -> mval <> "[Int32]"
     "oid"         -> mval <> "Int64"
     "inet"        -> mval <> "Text"
-    other         -> error $ "Unimplemented PostgresQL type conversion for " <> show other
+    other         -> mval <> "FIXME_" <> other
   where
     mval = case applyToMaybe of
              ApplyToMaybe      -> "Maybe "
@@ -229,12 +239,13 @@ pgTypeForColumn col =
     "uuid"        -> nullify "PGUuid"
     "json"        -> nullify "PGJson"
     "jsonb"       -> nullify "PGJsonb"
-    "varchar"     -> nullify "PGText"
-    "_varchar"    -> nullify "(PGArray Text)"
-    "_int4"       -> nullify "(PGArray Int4)"
+    "varchar"     -> nullify "SqlVarcharN"
+    "bpchar"      -> nullify "PGText"
+    "_varchar"    -> nullify "(PGArray SqlVarcharN)"
+    "_int4"       -> nullify "(PGArray PGInt4)"
     "oid"         -> nullify "PGInt8"
     "inet"        -> nullify "PGText"
-    other         -> error $ "Unimplemented PostgresQL type conversion for " <> show other
+    other         -> nullify $ "FIXME_" <> other
   where
     nullify v = if is_nullable col == "YES"
                 then "(Nullable " <> v <> ")"
@@ -245,9 +256,12 @@ pgTypeForColumn col =
 camelize :: Text -> Text
 camelize = C.process C.title C.camel
 
+camelize' :: Text -> Text
+camelize' = C.process C.lower C.camel
+
 typeName :: TableDefinition -> Text
 typeName = singularize . camelize . tableName
 
 fieldName :: InformationSchemaColumn -> Text
 fieldName c = haskelly (table_name c) <> camelize (column_name c)
-  where haskelly = singularize . C.camelize
+  where haskelly = singularize . camelize' 

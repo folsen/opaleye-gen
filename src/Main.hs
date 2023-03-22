@@ -25,7 +25,8 @@ import           Generate
 
 data Args = Args
   { dbString   :: String
-  , outputPath :: String }
+  , outputPath :: String 
+  , schema     :: String }
 
 argsParser :: Parser Args
 argsParser = Args
@@ -39,11 +40,15 @@ argsParser = Args
         <> short 'o'
         <> metavar "FILENAME"
         <> help "The output path (including filename) for the file you want to generate. Relative paths work." )
-
-allPublicColumns :: Query InformationSchemaColumnTable
-allPublicColumns = proc () -> do
+     <*> strOption
+         ( long "schema"
+        <> short 's'
+        <> metavar "SCHEMA"
+        <> help "Table schema" )
+allPublicColumns :: String -> Query InformationSchemaColumnTable
+allPublicColumns schema = proc () -> do
   columnRow <- queryTable informationSchemaColumnTable -< ()
-  restrict -< table_schema columnRow .== toNullable (pgString "public")
+  restrict -< table_schema columnRow .== toNullable (pgString schema)
   returnA -< columnRow
 
 groupColumns :: [InformationSchemaColumn] -> [TableDefinition]
@@ -61,12 +66,12 @@ sortColumns = L.sortBy (comparing ordinal_position)
 generateFile :: Args -> IO ()
 generateFile args = do
   conn <- PGS.connectPostgreSQL (Char8.pack $ dbString args)
-  allColumns <- runQuery conn allPublicColumns :: IO [InformationSchemaColumn]
+  allColumns <- runQuery conn (allPublicColumns (schema args)) :: IO [InformationSchemaColumn]
 
   h <- openFile (outputPath args) WriteMode
-  hPutStrLn h . unpack $ fileHeaderText
+  hPutStrLn h . unpack $ fileHeaderText (outputPath args)
   forM_ (groupColumns allColumns) $ \td ->
-    hPutStrLn h . unpack $ fullTableText td
+    hPutStrLn h . unpack $ fullTableText (schema args) td
   hClose h
 
 main :: IO ()
